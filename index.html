@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🦖 DINO.IO</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #000; font-family: 'Arial', sans-serif; }
+        canvas#gameCanvas { display: block; cursor: none; }
+        #ui { position: absolute; top: 10px; left: 10px; color: white; pointer-events: none; }
+        #score { font-size: 24px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); }
+        #length { font-size: 16px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); margin-top: 4px; }
+        #leaderboard { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.65);
+            padding: 15px; border-radius: 12px; color: white; min-width: 190px;
+            border: 1px solid rgba(255,215,0,0.3); pointer-events: none; }
+        #leaderboard h3 { text-align: center; margin-bottom: 8px; color: #FFD700; font-size: 16px; }
+        #leaderboard ol { padding-left: 20px; }
+        #leaderboard li { margin: 4px 0; font-size: 13px; }
+        canvas#minimap { position: absolute; bottom: 10px; right: 10px;
+            border: 2px solid rgba(255,255,255,0.4); border-radius: 8px; pointer-events: none; }
+        #boost-label { position: absolute; bottom: 38px; left: 10px; color: #ffd700;
+            font-size: 13px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); pointer-events: none; }
+        #boost-bar { position: absolute; bottom: 12px; left: 10px; width: 200px; height: 18px;
+            background: rgba(0,0,0,0.5); border-radius: 10px; overflow: hidden;
+            border: 2px solid rgba(255,255,255,0.25); pointer-events: none; }
+        #boost-fill { width: 100%; height: 100%;
+            background: linear-gradient(90deg, #ff6b35, #ffcc00); border-radius: 10px; transition: width 0.1s; }
+
+        /* Overlay screens */
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #startScreen { background: linear-gradient(160deg, #1a3a0a 0%, #2d5016 40%, #1a472a 100%); z-index: 10; }
+        #startScreen h1 { font-size: min(11vw, 80px); color: #FFD700;
+            text-shadow: 3px 3px 8px rgba(0,0,0,0.7); margin-bottom: 6px; }
+        #startScreen .subtitle { font-size: min(4vw, 22px); color: #90EE90; margin-bottom: 28px; }
+        #startScreen input { padding: 12px 20px; font-size: 18px; border-radius: 12px;
+            border: 2px solid #4CAF50; text-align: center; width: min(70vw, 260px);
+            background: rgba(255,255,255,0.95); outline: none; }
+        #startScreen button, #gameOver button { padding: 14px 46px; font-size: 22px;
+            background: #FF6B35; color: white; border: none; border-radius: 14px;
+            cursor: pointer; text-shadow: 1px 1px 2px rgba(0,0,0,0.4);
+            transition: background .15s, transform .1s; margin-top: 18px; }
+        #startScreen button:hover, #gameOver button:hover { background: #ff8c5a; transform: scale(1.06); }
+        .instructions { margin-top: 28px; font-size: min(3.4vw,15px); color: #bbb;
+            text-align: center; line-height: 2; }
+        #gameOver { display: none; z-index: 20;
+            background: rgba(0,0,0,0.82); }
+        #gameOver .box { background: rgba(30,30,30,0.95); padding: 38px 44px;
+            border-radius: 22px; text-align: center; border: 2px solid rgba(255,107,53,0.5); }
+        #gameOver h1 { color: #FF6B35; font-size: 48px; margin-bottom: 6px; }
+        #gameOver p { font-size: 18px; margin: 8px 0; color: #ddd; }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="ui">
+    <div id="score">Score: 0</div>
+    <div id="length">Length: 10</div>
+</div>
+
+<div id="leaderboard">
+    <h3>🏆 Leaderboard</h3>
+    <ol id="leaderList"></ol>
+</div>
+
+<canvas id="minimap" width="170" height="170"></canvas>
+
+<div id="boost-label">⚡ Boost (Hold Click)</div>
+<div id="boost-bar"><div id="boost-fill"></div></div>
+
+<!-- START SCREEN -->
+<div id="startScreen" class="overlay">
+    <h1>🦖 DINO.IO</h1>
+    <div class="subtitle">Survive the Prehistoric Arena!</div>
+    <input type="text" id="playerName" placeholder="Enter Dino Name" maxlength="15" autocomplete="off">
+    <button onclick="startGame()">🦕 PLAY!</button>
+    <div class="instructions">
+        🖱️ Move mouse to steer your dino<br>
+        🖱️ Hold Left-Click / Touch to BOOST<br>
+        🥚 Eat eggs, leaves &amp; meat to grow<br>
+        💀 Crash head into others = you die!<br>
+        🏆 Become the BIGGEST dinosaur!
+    </div>
+</div>
+
+<!-- GAME OVER SCREEN -->
+<div id="gameOver" class="overlay">
+    <div class="box">
+        <h1>☠️ EXTINCT!</h1>
+        <p>Your dino has gone extinct!</p>
+        <p id="finalScore">Score: 0</p>
+        <p id="finalLength">Length: 0</p>
+        <button onclick="restartGame()">🦖 Play Again</button>
+    </div>
+</div>
+
+<script>
+// ─── CANVAS SETUP ───
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
+const mmCvs  = document.getElementById('minimap');
+const mmCtx  = mmCvs.getContext('2d');
+
+function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
+resize(); addEventListener('resize', resize);
+
+// ─── CONSTANTS ───
+const W            = 5000;   // world size
+const FOOD_COUNT   = 400;
+const BOT_COUNT    = 14;
+const INIT_LEN     = 12;
+const SEG_R        = 13;
+const SEG_GAP      = 10;
+
+// ─── STATE ───
+let running = false, player = null, bots = [], foods = [], particles = [];
+let cam = {x:0,y:0}, mouse = {x:innerWidth/2, y:innerHeight/2};
+let boosting = false;
+
+// ─── PALETTE ───
+const PAL = [
+    {b:'#2E8B57',s:'#1a5c38',l:'#90EE90'},
+    {b:'#8B4513',s:'#5c2d0e',l:'#DEB887'},
+    {b:'#4169E1',s:'#2a4494',l:'#87CEEB'},
+    {b:'#DC143C',s:'#8b0d26',l:'#FFB6C1'},
+    {b:'#FF8C00',s:'#b86200',l:'#FFDAB9'},
+    {b:'#9932CC',s:'#6b2290',l:'#DDA0DD'},
+    {b:'#20B2AA',s:'#167a75',l:'#AFEEEE'},
+    {b:'#CD853F',s:'#8b5a28',l:'#F5DEB3'},
+    {b:'#6B8E23',s:'#4a6318',l:'#CDDC39'},
+    {b:'#B22222',s:'#7a1717',l:'#F08080'},
+    {b:'#FF69B4',s:'#cc5490',l:'#FFD1E8'},
+    {b:'#556B2F',s:'#3b4b20',l:'#C0D860'},
+    {b:'#D2691E',s:'#8a4513',l:'#F4A460'},
+    {b:'#4682B4',s:'#2e5a7e',l:'#ADD8E6'},
+];
+const NAMES = [
+    'T-Rex','Raptor','Bronto','Stego','Trike','Spino','Ankylo','Ptero',
+    'Diplo','Carno','Allo','Para','Compy','Galli','Dilo','Bary',
+    'Theri','Mega','Ovi','Pachy','Igua','Cory','Draco','Maia'
+];
+
+// ─── HELPERS ───
+const rand  = (a,b)=> a + Math.random()*(b-a);
+const randI = (a,b)=> Math.floor(rand(a,b));
+const dist2 = (a,b)=> (a.x-b.x)**2 + (a.y-b.y)**2;
+const lerp  = (a,b,t)=> a+(b-a)*t;
+function angleDiff(a,b){ let d=b-a; while(d>Math.PI)d-=2*Math.PI; while(d<-Math.PI)d+=2*Math.PI; return d; }
+
+// ─── FACTORY ───
+function makeSnake(x,y,ci,name,isP){
+    const segs=[];
+    for(let i=0;i<INIT_LEN;i++) segs.push({x:x-i*SEG_GAP, y});
+    return { segs, ang:rand(0,Math.PI*2), tAng:0, spd:3, col:PAL[ci%PAL.length],
+        name, isP:!!isP, alive:true, score:0, boost:100, boosting:false,
+        aiTgt:null, aiT:0, aiWA:rand(0,6.28), blink:0, sp:rand(0,6.28) };
+}
+function makeFood(x,y){
+    const t=['egg','leaf','meat','berry'][randI(0,4)];
+    const m={egg:['#FFF8DC',7,1],leaf:['#32CD32',9,2],meat:['#DC143C',11,3],berry:['#8B008B',6,1]};
+    const [c,sz,v]=m[t];
+    return { x:x??rand(60,W-60), y:y??rand(60,W-60), t, c, sz, v, p:rand(0,6.28), alive:true };
+}
+
+// ─── INIT ───
+function init(pn){
+    player = makeSnake(W/2,W/2,0,pn||'Dino',true);
+    bots=[]; foods=[]; particles=[];
+    for(let i=0;i<BOT_COUNT;i++){
+        const b=makeSnake(rand(300,W-300),rand(300,W-300),(i+1)%PAL.length, NAMES[i%NAMES.length]);
+        const extra=randI(5,30);
+        for(let j=0;j<extra;j++){ const tl=b.segs[b.segs.length-1]; b.segs.push({x:tl.x,y:tl.y}); b.score+=2; }
+        bots.push(b);
+    }
+    for(let i=0;i<FOOD_COUNT;i++) foods.push(makeFood());
+}
+
+// ─── MOVEMENT ───
+function moveSnake(sn){
+    if(!sn.alive) return;
+    const ad = angleDiff(sn.ang, sn.tAng);
+    sn.ang += ad * 0.12;
+    let spd = sn.spd;
+    if(sn.boosting && sn.boost>0){
+        spd *= 2;
+        sn.boost -= 0.5;
+        if(sn.boost<=0) sn.boosting=false;
+        if(sn.segs.length>5 && Math.random()<0.12){
+            const tl=sn.segs.pop();
+            foods.push(makeFood(tl.x, tl.y));
+        }
+    } else {
+        sn.boost = Math.min(100, sn.boost+0.18);
+    }
+    const h=sn.segs[0];
+    const nh = { x: h.x+Math.cos(sn.ang)*spd, y: h.y+Math.sin(sn.ang)*spd };
+    const m=50;
+    if(nh.x<m){nh.x=m; sn.ang=0;} if(nh.x>W-m){nh.x=W-m; sn.ang=Math.PI;}
+    if(nh.y<m){nh.y=m; sn.ang=Math.PI/2;} if(nh.y>W-m){nh.y=W-m; sn.ang=-Math.PI/2;}
+    sn.segs.unshift(nh); sn.segs.pop();
+    for(let i=1;i<sn.segs.length;i++){
+        const p=sn.segs[i-1], c=sn.segs[i];
+        const dx=c.x-p.x, dy=c.y-p.y, d=Math.sqrt(dx*dx+dy*dy);
+        if(d>SEG_GAP){ const r=SEG_GAP/d; c.x=p.x+dx*r; c.y=p.y+dy*r; }
+    }
+    sn.sp+=0.05;
+    sn.blink=Math.max(0,sn.blink-0.02);
+    if(Math.random()<0.003) sn.blink=1;
+}
+
+// ─── AI ───
+function ai(bot){
+    if(!bot.alive) return;
+    const h=bot.segs[0];
+    // boundary avoidance
+    const bm=250;
+    if(h.x<bm||h.x>W-bm||h.y<bm||h.y>W-bm){
+        bot.tAng=Math.atan2(W/2-h.y, W/2-h.x); bot.boosting=false; return;
+    }
+    // danger detection
+    const all=[player,...bots];
+    let danger=false, dAng=0;
+    for(const o of all){
+        if(o===bot||!o.alive) continue;
+        for(let i=4;i<o.segs.length;i+=2){
+            if(dist2(h,o.segs[i])<6400){ danger=true; dAng=Math.atan2(o.segs[i].y-h.y, o.segs[i].x-h.x); break; }
+        }
+        if(danger) break;
+    }
+    if(danger){ bot.tAng=dAng+Math.PI; bot.boosting=bot.boost>30; return; }
+    // food seek
+    let nf=null, nd=Infinity;
+    for(const f of foods){ if(!f.alive) continue; const d=dist2(h,f); if(d<nd){nd=d;nf=f;} }
+    if(nf && nd<250000){ bot.tAng=Math.atan2(nf.y-h.y, nf.x-h.x); bot.boosting=false; return; }
+    // aggression
+    if(bot.segs.length>18){
+        for(const o of all){
+            if(o===bot||!o.alive||o.segs.length>=bot.segs.length*.7) continue;
+            const d=Math.sqrt(dist2(h,o.segs[0]));
+            if(d<250&&d>40){ bot.tAng=Math.atan2(o.segs[0].y-h.y,o.segs[0].x-h.x); bot.boosting=bot.boost>40; return; }
+        }
+    }
+    // wander
+    bot.aiT--; if(bot.aiT<=0){ bot.aiWA+=(Math.random()-.5)*1.2; bot.aiT=40+rand(0,80); }
+    bot.tAng=bot.aiWA; bot.boosting=false;
+}
+
+// ─── COLLISIONS ───
+function collisions(){
+    const all=[player,...bots];
+    for(const sn of all){
+        if(!sn.alive) continue;
+        const h=sn.segs[0];
+        // eat food
+        for(const f of foods){
+            if(!f.alive) continue;
+            if(dist2(h,f)<(SEG_R+f.sz)**2){
+                f.alive=false; sn.score+=f.v;
+                for(let j=0;j<f.v;j++){ const tl=sn.segs[sn.segs.length-1]; sn.segs.push({x:tl.x,y:tl.y}); }
+                spawnParticles(f.x,f.y,f.c,5,3,25);
+            }
+        }
+        // head-body
+        for(const o of all){
+            if(o===sn||!o.alive) continue;
+            for(let i=4;i<o.segs.length;i++){
+                if(dist2(h,o.segs[i])<(SEG_R*1.6)**2){
+                    kill(sn); o.score+=Math.floor(sn.score/2); break;
+                }
+            }
+            if(!sn.alive) break;
+        }
+    }
+    foods=foods.filter(f=>f.alive);
+    while(foods.length<FOOD_COUNT) foods.push(makeFood());
+}
+
+function spawnParticles(x,y,c,n,sz,life){
+    for(let i=0;i<n;i++) particles.push({x,y,vx:rand(-4,4),vy:rand(-4,4),life,c,sz:rand(2,sz)});
+}
+
+function kill(sn){
+    sn.alive=false;
+    for(let i=0;i<sn.segs.length;i+=3){
+        const s=sn.segs[i];
+        foods.push(makeFood(s.x+rand(-15,15), s.y+rand(-15,15)));
+    }
+    spawnParticles(sn.segs[0].x,sn.segs[0].y,sn.col.b,25,6,50);
+    if(sn.isP){
+        setTimeout(()=>{
+            document.getElementById('finalScore').textContent='Score: '+sn.score;
+            document.getElementById('finalLength').textContent='Max Length: '+sn.segs.length;
+            document.getElementById('gameOver').style.display='flex';
+        },600);
+    } else {
+        setTimeout(()=>{
+            const idx=bots.indexOf(sn); if(idx<0) return;
+            const nb=makeSnake(rand(300,W-300),rand(300,W-300),randI(0,PAL.length),NAMES[randI(0,NAMES.length)]);
+            const ex=randI(3,15); for(let j=0;j<ex;j++){const tl=nb.segs[nb.segs.length-1]; nb.segs.push({x:tl.x,y:tl.y}); nb.score+=2;}
+            bots[idx]=nb;
+        },3000);
+    }
+}
+
+// ─── DRAW ───
+function drawBG(){
+    ctx.fillStyle='#1e3d0e'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    // subtle texture tiles
+    const gs=100, sx=-cam.x%gs, sy=-cam.y%gs;
+    ctx.strokeStyle='rgba(255,255,255,0.035)'; ctx.lineWidth=1;
+    for(let x=sx;x<canvas.width;x+=gs){ ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke(); }
+    for(let y=sy;y<canvas.height;y+=gs){ ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke(); }
+    // deco plants
+    for(let i=0;i<60;i++){
+        const px=((i*173+71)%W)-cam.x, py=((i*271+53)%W)-cam.y;
+        if(px<-60||px>canvas.width+60||py<-60||py>canvas.height+60) continue;
+        ctx.fillStyle=`rgba(28,${60+i%30},15,${0.25+(i%4)*.08})`;
+        ctx.beginPath();ctx.arc(px,py,18+(i%6)*7,0,Math.PI*2);ctx.fill();
+    }
+    // boundary
+    ctx.strokeStyle='rgba(255,50,50,0.6)'; ctx.lineWidth=5;
+    const lx=-cam.x, rx=W-cam.x, ty=-cam.y, by=W-cam.y;
+    ctx.strokeRect(lx,ty,W,W);
+}
+
+function drawFood(){
+    for(const f of foods){
+        const sx=f.x-cam.x, sy=f.y-cam.y;
+        if(sx<-30||sx>canvas.width+30||sy<-30||sy>canvas.height+30) continue;
+        f.p+=0.04;
+        const ps=f.sz+Math.sin(f.p)*2;
+        ctx.save(); ctx.translate(sx,sy);
+        // glow
+        ctx.shadowColor=f.c; ctx.shadowBlur=8;
+        if(f.t==='egg'){
+            ctx.fillStyle='#FFF8DC'; ctx.beginPath(); ctx.ellipse(0,0,ps*.8,ps,0,0,6.28); ctx.fill();
+            ctx.fillStyle='rgba(180,160,120,0.35)'; ctx.beginPath(); ctx.arc(-2,-2,2.5,0,6.28); ctx.arc(3,1,1.8,0,6.28); ctx.fill();
+        } else if(f.t==='leaf'){
+            ctx.fillStyle='#32CD32'; ctx.beginPath(); ctx.ellipse(0,0,ps*.5,ps,.7,0,6.28); ctx.fill();
+            ctx.strokeStyle='#228B22'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(-ps*.3,ps*.3); ctx.lineTo(ps*.3,-ps*.3); ctx.stroke();
+        } else if(f.t==='meat'){
+            ctx.fillStyle='#DC143C'; ctx.beginPath(); ctx.arc(0,0,ps,0,6.28); ctx.fill();
+            ctx.fillStyle='#FF8888'; ctx.beginPath(); ctx.arc(-2,-2,ps*.35,0,6.28); ctx.fill();
+            ctx.fillStyle='#fff'; ctx.fillRect(-1.5,-ps-1,3,4);
+        } else {
+            ctx.fillStyle='#8B008B'; ctx.beginPath(); ctx.arc(0,0,ps,0,6.28); ctx.fill();
+            ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.beginPath(); ctx.arc(-1,-1,ps*.3,0,6.28); ctx.fill();
+        }
+        ctx.shadowBlur=0; ctx.restore();
+    }
+}
+
+function drawSnake(sn){
+    if(!sn.alive) return;
+    const ss=sn.segs, col=sn.col;
+    // body
+    for(let i=ss.length-1;i>=0;i--){
+        const sx=ss[i].x-cam.x, sy=ss[i].y-cam.y;
+        if(sx<-40||sx>canvas.width+40||sy<-40||sy>canvas.height+40) continue;
+        const t=i/ss.length, sz=SEG_R*(.4+t*.6);
+        ctx.fillStyle=col.b; ctx.beginPath(); ctx.arc(sx,sy,sz,0,6.28); ctx.fill();
+        // belly
+        if(i>0){
+            const p=ss[i-1], a=Math.atan2(ss[i].y-p.y,ss[i].x-p.x);
+            ctx.fillStyle=col.l; ctx.beginPath();
+            ctx.arc(sx+Math.cos(a+1.57)*sz*.2, sy+Math.sin(a+1.57)*sz*.2, sz*.45,0,6.28); ctx.fill();
+        }
+        // scales
+        if(i%4===0){ ctx.fillStyle=col.s; ctx.beginPath();
+            ctx.arc(sx+Math.sin(i*.5)*sz*.3, sy+Math.cos(i*.5)*sz*.3, sz*.22,0,6.28); ctx.fill(); }
+        // spikes
+        if(i%3===0&&i>0&&i<ss.length-2){
+            const p=ss[i-1], ba=Math.atan2(ss[i].y-p.y, ss[i].x-p.x), sa=ba-1.57;
+            const spSz=sz*.55+Math.sin(sn.sp+i*.3)*1.5;
+            ctx.fillStyle=col.s; ctx.beginPath();
+            ctx.moveTo(sx+Math.cos(sa)*sz*.5, sy+Math.sin(sa)*sz*.5);
+            ctx.lineTo(sx+Math.cos(sa)*(sz+spSz), sy+Math.sin(sa)*(sz+spSz));
+            ctx.lineTo(sx+Math.cos(sa+.3)*sz*.5, sy+Math.sin(sa+.3)*sz*.5);
+            ctx.fill();
+        }
+    }
+    // head detail
+    const h=ss[0], hx=h.x-cam.x, hy=h.y-cam.y;
+    if(hx<-60||hx>canvas.width+60||hy<-60||hy>canvas.height+60) return;
+    const ha=sn.ang, hs=SEG_R*1.15;
+    ctx.save(); ctx.translate(hx,hy); ctx.rotate(ha);
+    // head shape
+    ctx.fillStyle=col.b;
+    ctx.beginPath(); ctx.ellipse(3,0,hs*1.35,hs,0,0,6.28); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(hs*1.2,0,hs*.65,hs*.7,0,0,6.28); ctx.fill();
+    // nostrils
+    ctx.fillStyle=col.s;
+    ctx.beginPath(); ctx.arc(hs*1.55,-3,1.8,0,6.28); ctx.arc(hs*1.55,3,1.8,0,6.28); ctx.fill();
+    // eyes
+    const eS=hs*.33, eX=hs*.35, eY=hs*.6;
+    [-1,1].forEach(side=>{
+        ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(eX, side*eY, eS,0,6.28); ctx.fill();
+        if(sn.blink<.5){
+            ctx.fillStyle='#FFD700'; ctx.beginPath(); ctx.arc(eX+2, side*eY, eS*.7,0,6.28); ctx.fill();
+            ctx.fillStyle='#000'; ctx.beginPath(); ctx.ellipse(eX+3, side*eY, eS*.22, eS*.48,0,0,6.28); ctx.fill();
+        } else {
+            ctx.strokeStyle=col.s; ctx.lineWidth=2;
+            ctx.beginPath(); ctx.moveTo(eX-eS, side*eY); ctx.lineTo(eX+eS, side*eY); ctx.stroke();
+        }
+    });
+    // teeth
+    ctx.fillStyle='#fff';
+    for(let t=0;t<3;t++){
+        const tx=hs*.85+t*5;
+        [1,-1].forEach(side=>{
+            ctx.beginPath();
+            ctx.moveTo(tx, side*hs*.22);
+            ctx.lineTo(tx+2, side*hs*.44);
+            ctx.lineTo(tx+4, side*hs*.22);
+            ctx.fill();
+        });
+    }
+    // jaw line
+    ctx.strokeStyle=col.s; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(hs*.7,hs*.28); ctx.lineTo(hs*1.6,0); ctx.moveTo(hs*.7,-hs*.28); ctx.lineTo(hs*1.6,0); ctx.stroke();
+    // horns
+    ctx.fillStyle=col.s;
+    [-1,1].forEach(side=>{
+        ctx.beginPath();
+        ctx.moveTo(-hs*.3, side*hs*.75);
+        ctx.lineTo(-hs*.65, side*hs*1.45);
+        ctx.lineTo(0, side*hs*.75);
+        ctx.fill();
+    });
+    ctx.restore();
+
+    // name tag
+    ctx.fillStyle='rgba(0,0,0,0.45)';
+    ctx.fillRect(hx-50, hy-hs*2.5-16, 100, 22);
+    ctx.fillStyle='#fff'; ctx.font='bold 13px Arial'; ctx.textAlign='center';
+    ctx.fillText(sn.name+' ['+sn.segs.length+']', hx, hy-hs*2.5);
+
+    // boost trail
+    if(sn.boosting && sn.boost>0){
+        const tl=ss[ss.length-1];
+        for(let i=0;i<2;i++) particles.push({
+            x:tl.x+rand(-8,8), y:tl.y+rand(-8,8),
+            vx:-Math.cos(sn.ang)*3+rand(-1.5,1.5), vy:-Math.sin(sn.ang)*3+rand(-1.5,1.5),
+            life:18, c:'#FFD700', sz:rand(2,5)
+        });
+    }
+}
+
+function drawParticles(){
+    for(let i=particles.length-1;i>=0;i--){
+        const p=particles[i];
+        p.x+=p.vx; p.y+=p.vy; p.vx*=.94; p.vy*=.94; p.life--;
+        if(p.life<=0){ particles.splice(i,1); continue; }
+        const sx=p.x-cam.x, sy=p.y-cam.y;
+        if(sx<-20||sx>canvas.width+20||sy<-20||sy>canvas.height+20) continue;
+        ctx.globalAlpha=p.life/50;
+        ctx.fillStyle=p.c; ctx.beginPath(); ctx.arc(sx,sy,p.sz*(p.life/50),0,6.28); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+}
+
+function drawCursor(){
+    ctx.strokeStyle='rgba(255,255,255,0.45)'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(mouse.x,mouse.y,14,0,6.28); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(mouse.x-18,mouse.y); ctx.lineTo(mouse.x+18,mouse.y);
+    ctx.moveTo(mouse.x,mouse.y-18); ctx.lineTo(mouse.x,mouse.y+18);
+    ctx.stroke();
+}
+
+function drawMinimap(){
+    mmCtx.fillStyle='rgba(15,30,8,0.85)';
+    mmCtx.fillRect(0,0,170,170);
+    const sc=170/W;
+    mmCtx.fillStyle='rgba(80,160,60,0.25)';
+    for(const f of foods) mmCtx.fillRect(f.x*sc, f.y*sc,1,1);
+    for(const b of bots){
+        if(!b.alive) continue;
+        mmCtx.fillStyle=b.col.b;
+        mmCtx.beginPath(); mmCtx.arc(b.segs[0].x*sc, b.segs[0].y*sc,2.5,0,6.28); mmCtx.fill();
+    }
+    if(player&&player.alive){
+        mmCtx.fillStyle='#FFD700';
+        mmCtx.beginPath(); mmCtx.arc(player.segs[0].x*sc, player.segs[0].y*sc,4,0,6.28); mmCtx.fill();
+        mmCtx.strokeStyle='rgba(255,255,255,0.25)';
+        mmCtx.strokeRect(cam.x*sc, cam.y*sc, canvas.width*sc, canvas.height*sc);
+    }
+    mmCtx.strokeStyle='rgba(255,255,255,0.2)'; mmCtx.strokeRect(0,0,170,170);
+}
+
+function updateLeaderboard(){
+    const all=[player,...bots].filter(s=>s&&s.alive);
+    all.sort((a,b)=>b.segs.length-a.segs.length);
+    const ol=document.getElementById('leaderList');
+    ol.innerHTML='';
+    all.slice(0,8).forEach(s=>{
+        const li=document.createElement('li');
+        li.textContent=(s.isP?'⭐ ':'🦖 ')+s.name+' ('+s.segs.length+')';
+        if(s.isP){ li.style.color='#FFD700'; li.style.fontWeight='bold'; }
+        ol.appendChild(li);
+    });
+}
+
+function updateUI(){
+    if(!player||!player.alive) return;
+    document.getElementById('score').textContent='Score: '+player.score;
+    document.getElementById('length').textContent='Length: '+player.segs.length;
+    document.getElementById('boost-fill').style.width=player.boost+'%';
+}
+
+// ─── GAME LOOP ───
+function loop(){
+    if(!running) return;
+    // player input
+    if(player&&player.alive){
+        const wx=mouse.x+cam.x, wy=mouse.y+cam.y, h=player.segs[0];
+        player.tAng=Math.atan2(wy-h.y, wx-h.x);
+        player.boosting=boosting;
+    }
+    // update
+    for(const b of bots) ai(b);
+    if(player&&player.alive) moveSnake(player);
+    for(const b of bots) moveSnake(b);
+    // camera
+    if(player&&player.alive){
+        const h=player.segs[0];
+        cam.x=lerp(cam.x, h.x-canvas.width/2, 0.08);
+        cam.y=lerp(cam.y, h.y-canvas.height/2, 0.08);
+    }
+    collisions();
+    // render
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    drawBG(); drawFood();
+    for(const b of bots) drawSnake(b);
+    if(player) drawSnake(player);
+    drawParticles(); drawCursor();
+    drawMinimap(); updateLeaderboard(); updateUI();
+    requestAnimationFrame(loop);
+}
+
+// ─── EVENTS ───
+canvas.addEventListener('mousemove',e=>{ mouse.x=e.clientX; mouse.y=e.clientY; });
+canvas.addEventListener('mousedown',e=>{ if(e.button===0) boosting=true; });
+canvas.addEventListener('mouseup',e=>{ if(e.button===0) boosting=false; });
+canvas.addEventListener('touchmove',e=>{ e.preventDefault(); mouse.x=e.touches[0].clientX; mouse.y=e.touches[0].clientY; },{passive:false});
+canvas.addEventListener('touchstart',e=>{ e.preventDefault(); boosting=true; mouse.x=e.touches[0].clientX; mouse.y=e.touches[0].clientY; },{passive:false});
+canvas.addEventListener('touchend',()=>{ boosting=false; });
+
+function startGame(){
+    const n=document.getElementById('playerName').value.trim()||'Dino';
+    document.getElementById('startScreen').style.display='none';
+    document.getElementById('gameOver').style.display='none';
+    init(n); running=true; loop();
+}
+function restartGame(){
+    document.getElementById('gameOver').style.display='none';
+    const n=player?player.name:'Dino';
+    init(n); running=true; loop();
+}
+document.getElementById('playerName').focus();
+document.getElementById('playerName').addEventListener('keydown',e=>{ if(e.key==='Enter') startGame(); });
+</script>
+</body>
+</html>
