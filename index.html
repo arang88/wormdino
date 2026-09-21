@@ -290,7 +290,7 @@ C.width=SW*dp;C.height=SH*dp;C.style.width=SW+'px';C.style.height=SH+'px';X.setT
 rsz();window.addEventListener('resize',rsz);
 function ell(c,cx,cy,rx,ry,r){c.save();c.translate(cx,cy);c.rotate(r||0);c.scale(1,ry/rx);c.beginPath();c.arc(0,0,rx,0,6.28);c.restore();}
 
-var WD=4800,FCC=280,BC=13,IL=12,SR=13,SG=10,TRN=0.22;
+var WD=4800,FCC=280,BC=13,IL=12,SR=13,SG=10,TRN=0.26;
 var PAL=[{b:'#2d7a47',s:'#1a5030',l:'#8ae8a0',h:'rgba(85,192,112,0.4)',d:'rgba(36,104,56,0.5)'},
 {b:'#7a3b10',s:'#4d2508',l:'#d4a86a',h:'rgba(160,96,40,0.4)',d:'rgba(92,44,10,0.5)'},
 {b:'#3958b8',s:'#253c80',l:'#7ab8e0',h:'rgba(80,112,208,0.4)',d:'rgba(42,58,138,0.5)'},
@@ -327,7 +327,7 @@ var ex=ri(5,28);for(var j=0;j<ex;j++){var tl=b.sg[b.sg.length-1];b.sg.push({x:tl
 for(var i=0;i<FCC;i++)food.push(mkF());genDeco();}
 
 function mv(s){if(!s.al)return;s.a+=ad(s.a,s.ta)*(s.ip?TRN:0.14);var sp=s.spd;
-if(s.bs&&s.bo>0){sp*=1.9;s.bo-=0.5;if(s.bo<=0)s.bs=false;if(s.sg.length>5&&Math.random()<0.1){var tl=s.sg.pop();food.push(mkF(tl.x,tl.y));}s.jaw=Math.min(1,s.jaw+0.15);}
+if(s.bs&&s.bo>0){sp*=1.7;s.bo-=0.5;if(s.bo<=0)s.bs=false;if(s.sg.length>5&&Math.random()<0.1){var tl=s.sg.pop();food.push(mkF(tl.x,tl.y));}s.jaw=Math.min(1,s.jaw+0.15);}
 else{s.bo=Math.min(100,s.bo+0.22);s.jaw=Math.max(0,s.jaw-0.05);}
 var h=s.sg[0],nx=h.x+Math.cos(s.a)*sp,ny=h.y+Math.sin(s.a)*sp;
 if(nx<50){nx=50;s.a=0;}if(nx>WD-50){nx=WD-50;s.a=Math.PI;}if(ny<50){ny=50;s.a=1.57;}if(ny>WD-50){ny=WD-50;s.a=-1.57;}
@@ -507,11 +507,13 @@ var m=i===0?'👑':i===1?'🥈':i===2?'🥉':'🦖';li.textContent=m+' '+s.nm+' 
 function upUI(){if(!P||!P.al||fc%6)return;document.getElementById('sc').textContent='Score: '+P.sc;
 document.getElementById('ln').textContent='Length: '+P.sg.length+' | Kills: '+kills;document.getElementById('bf').style.width=P.bo+'%';}
 
-var lt=0;function loop(t){if(!run)return;try{fc++;var dt=lt?Math.min(t-lt,33):16.67;lt=t;
+var lt=0,rafId=null;function loop(t){if(!run)return;
+try{fc++;var dt=lt?Math.min(t-lt,33):16.67;lt=t;
 for(var s=0;s<Math.min(Math.max(1,Math.round(dt/16.67)),2);s++){procIn();for(var i=0;i<bots.length;i++){if((fc+i)%2===0)aiUp(bots[i]);}
 if(P&&P.al)mv(P);for(var i=0;i<bots.length;i++)mv(bots[i]);if(P&&P.al){var hh=P.sg[0];cam.x=lr(cam.x,hh.x-SW/2,0.1);cam.y=lr(cam.y,hh.y-SH/2,0.1);}col();}
 X.clearRect(0,0,SW,SH);drBG();drF();for(var i=0;i<bots.length;i++)drS(bots[i]);if(P)drS(P);drDir();drPts();drJoy();drCur();upLB();upUI();
-}catch(e){document.getElementById('err').style.display='block';document.getElementById('err').textContent='Error: '+e.message;}requestAnimationFrame(loop);}
+}catch(e){document.getElementById('err').style.display='block';document.getElementById('err').textContent='Error: '+e.message;}
+rafId=requestAnimationFrame(loop);}
 
 C.addEventListener('mousemove',function(e){mouseX=e.clientX;mouseY=e.clientY;});
 C.addEventListener('mousedown',function(e){if(e.button===0)boostBtn=true;});
@@ -536,12 +538,20 @@ if(t.identifier===touch1Id){touch1Id=-1;joyActive=false;joyId=-1;}
 if(t.identifier===touch2Id){touch2Id=-1;boostBtn=false;boostTouchId=-1;}}},{passive:false});
 C.addEventListener('touchcancel',function(){touch1Id=-1;touch2Id=-1;joyActive=false;joyId=-1;boostBtn=false;boostTouchId=-1;});
 
-function startGame(){var n=document.getElementById('pn').value.trim()||'Dino';
+function startGame(){if(rafId){cancelAnimationFrame(rafId);rafId=null;}run=false;
+var n=document.getElementById('pn').value.trim()||'Dino';
 document.getElementById('ss').style.display='none';document.getElementById('go').style.display='none';document.getElementById('err').style.display='none';
-init(n);run=true;lt=0;showAd();requestAnimationFrame(loop);}
-function restart(){document.getElementById('go').style.display='none';document.getElementById('err').style.display='none';
-var n=P?P.nm:'Dino';init(n);run=true;lt=0;requestAnimationFrame(loop);}
+init(n);lt=0;run=true;showAd();rafId=requestAnimationFrame(loop);}
+
+function restart(){if(rafId){cancelAnimationFrame(rafId);rafId=null;}run=false;
+document.getElementById('go').style.display='none';document.getElementById('err').style.display='none';
+var n=P?P.nm:'Dino';init(n);lt=0;run=true;rafId=requestAnimationFrame(loop);}
+
 document.getElementById('pn').focus();document.getElementById('pn').addEventListener('keydown',function(e){if(e.key==='Enter')startGame();});
 </script>
 </body>
 </html>
+
+
+
+
